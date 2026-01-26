@@ -23,6 +23,10 @@ FIELD_ORDER = [
     "doi",
 ]
 MAX_HITS = 10
+JOURNAL_EXPANSIONS = {
+    "commun acm": "Communications of the ACM",
+    "j cryptol": "Journal of Cryptology",
+}
 
 
 def http_get(url: str) -> str:
@@ -208,18 +212,26 @@ def render_entry(entry_type: str, entry_key: str, fields: dict[str, str | None])
         value = fields.get(name)
         if not value:
             continue
-        value_lines = value.splitlines() or [""]
+        value_oneline = re.sub(r"\s+", " ", value).strip()
         prefix = f"  {name:<{width}} = {{"
-        if len(value_lines) == 1:
-            lines.append(prefix + value_lines[0] + "},")
-        else:
-            lines.append(prefix + value_lines[0])
-            continuation = " " * len(prefix)
-            for line in value_lines[1:-1]:
-                lines.append(continuation + line)
-            lines.append(continuation + value_lines[-1] + "},")
+        lines.append(prefix + value_oneline + "},")
     lines.append("}")
     return "\n".join(lines)
+
+
+def _normalize_journal_name(value: str) -> str:
+    """Normalize a journal name for matching against expansions."""
+    no_braces = re.sub(r"[{}]", "", value)
+    no_punct = re.sub(r"[.,:;]", "", no_braces)
+    return re.sub(r"\s+", " ", no_punct).strip().lower()
+
+
+def expand_journal_name(value: str | None) -> str | None:
+    """Expand known abbreviated journal names to full titles."""
+    if not value:
+        return value
+    normalized = _normalize_journal_name(value)
+    return JOURNAL_EXPANSIONS.get(normalized, value)
 
 
 def merge_crossref_fields(
@@ -252,6 +264,8 @@ def main() -> None:
         entry_type, entry_key = parse_entry_header(bibtex)
         fields = {name: extract_field_value(bibtex, name) for name in FIELD_ORDER}
         fields = merge_crossref_fields(bibtex, fields)
+        if "journal" in fields:
+            fields["journal"] = expand_journal_name(fields["journal"])
         print(render_entry(entry_type, entry_key, fields))
     except KeyboardInterrupt:
         print("\nSelection cancelled.", file=sys.stderr)
