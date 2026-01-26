@@ -10,7 +10,18 @@ import urllib.parse
 import urllib.request
 
 
-FIELD_ORDER = ["author", "title", "booktitle", "series", "year", "doi"]
+FIELD_ORDER = [
+    "author",
+    "title",
+    "journal",
+    "booktitle",
+    "series",
+    "volume",
+    "number",
+    "pages",
+    "year",
+    "doi",
+]
 MAX_HITS = 10
 
 
@@ -206,6 +217,25 @@ def render_entry(entry_type: str, entry_key: str, fields: dict[str, str | None])
     return "\n".join(lines)
 
 
+def merge_crossref_fields(
+    bibtex: str, fields: dict[str, str | None]
+) -> dict[str, str | None]:
+    """Populate missing fields from a crossref entry if available."""
+    if fields.get("booktitle") or fields.get("series"):
+        return fields
+    crossref = extract_field_value(bibtex, "crossref")
+    if not crossref:
+        return fields
+    try:
+        crossref_bibtex = fetch_bibtex_entry(crossref)
+    except Exception:
+        return fields
+    for name in ("booktitle", "series", "year"):
+        if not fields.get(name):
+            fields[name] = extract_field_value(crossref_bibtex, name)
+    return fields
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print('Usage: python dblp.py "Paper Title"', file=sys.stderr)
@@ -216,6 +246,7 @@ def main() -> None:
         bibtex = fetch_bibtex_entry(key)
         entry_type, entry_key = parse_entry_header(bibtex)
         fields = {name: extract_field_value(bibtex, name) for name in FIELD_ORDER}
+        fields = merge_crossref_fields(bibtex, fields)
         print(render_entry(entry_type, entry_key, fields))
     except KeyboardInterrupt:
         print("\nSelection cancelled.", file=sys.stderr)
