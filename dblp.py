@@ -141,7 +141,12 @@ def parse_entry_header(bibtex: str) -> tuple[str, str]:
     match = re.search(r"@\s*([A-Za-z0-9_:-]+)\s*{\s*([^,\s]+)", bibtex)
     if not match:
         return "entry", "unknown"
-    return match.group(1), match.group(2)
+    entry_key = match.group(2)
+    if entry_key.startswith("DBLP:"):
+        entry_key = entry_key.split(":", 1)[1]
+    if "/" in entry_key:
+        entry_key = entry_key.rsplit("/", 1)[1]
+    return match.group(1), entry_key
 
 
 def _extract_braced_value(text: str, start_index: int) -> str | None:
