@@ -25,6 +25,7 @@ FIELD_ORDER = [
 MAX_HITS = 10
 JOURNAL_EXPANSIONS = {
     "commun acm": "Communications of the ACM",
+    "j acm": "Journal of the ACM",
     "j cryptol": "Journal of Cryptology",
 }
 
