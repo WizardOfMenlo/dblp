@@ -28,6 +28,23 @@ JOURNAL_EXPANSIONS = {
     "j acm": "Journal of the ACM",
     "j cryptol": "Journal of Cryptology",
 }
+AUTHOR_PARTICLES = {
+    "da",
+    "de",
+    "del",
+    "della",
+    "di",
+    "do",
+    "dos",
+    "du",
+    "la",
+    "le",
+    "van",
+    "der",
+    "den",
+    "ter",
+    "von",
+}
 
 
 def http_get(url: str) -> str:
@@ -205,6 +222,87 @@ def extract_field_value(bibtex: str, field_name: str) -> str | None:
     return _extract_quoted_value(bibtex, start_index)
 
 
+def _split_on_spaces(value: str) -> list[str]:
+    """Split on spaces while respecting brace-wrapped tokens."""
+    tokens: list[str] = []
+    buffer: list[str] = []
+    depth = 0
+    for char in value:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(0, depth - 1)
+        if char.isspace() and depth == 0:
+            if buffer:
+                tokens.append("".join(buffer))
+                buffer = []
+        else:
+            buffer.append(char)
+    if buffer:
+        tokens.append("".join(buffer))
+    return tokens
+
+
+def _split_authors(value: str) -> list[str]:
+    """Split a BibTeX author field into individual author strings."""
+    normalized = re.sub(r"\s+", " ", value).strip()
+    authors: list[str] = []
+    buffer: list[str] = []
+    depth = 0
+    i = 0
+    while i < len(normalized):
+        char = normalized[i]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(0, depth - 1)
+        if depth == 0 and normalized[i : i + 5].lower() == " and ":
+            authors.append("".join(buffer).strip())
+            buffer = []
+            i += 5
+            continue
+        buffer.append(char)
+        i += 1
+    if buffer:
+        authors.append("".join(buffer).strip())
+    return [author for author in authors if author]
+
+
+def _format_author_name(name: str) -> str:
+    """Format a single author name as 'Surname, Given'."""
+    normalized = re.sub(r"\s+", " ", name).strip()
+    if not normalized:
+        return normalized
+    if "," in normalized:
+        normalized = re.sub(r"\s*,\s*", ", ", normalized)
+        return normalized
+    tokens = _split_on_spaces(normalized)
+    if len(tokens) <= 1:
+        return normalized
+    last_index = len(tokens) - 1
+    while last_index > 0:
+        candidate = tokens[last_index - 1]
+        stripped = re.sub(r"[{}]", "", candidate)
+        if stripped and (stripped[0].islower() or stripped.lower() in AUTHOR_PARTICLES):
+            last_index -= 1
+            continue
+        break
+    last_name = " ".join(tokens[last_index:])
+    first_name = " ".join(tokens[:last_index])
+    if not first_name:
+        return last_name
+    return f"{last_name}, {first_name}"
+
+
+def format_authors(value: str | None) -> str | None:
+    """Format BibTeX author lists into 'Surname, Given' entries."""
+    if not value:
+        return value
+    authors = _split_authors(value)
+    formatted = [_format_author_name(author) for author in authors]
+    return " and ".join(formatted)
+
+
 def render_entry(entry_type: str, entry_key: str, fields: dict[str, str | None]) -> str:
     """Format the BibTeX entry with only the requested fields."""
     width = max(len(field) for field in FIELD_ORDER)
@@ -265,6 +363,8 @@ def main() -> None:
         entry_type, entry_key = parse_entry_header(bibtex)
         fields = {name: extract_field_value(bibtex, name) for name in FIELD_ORDER}
         fields = merge_crossref_fields(bibtex, fields)
+        if "author" in fields:
+            fields["author"] = format_authors(fields["author"])
         if "journal" in fields:
             fields["journal"] = expand_journal_name(fields["journal"])
         print(render_entry(entry_type, entry_key, fields))
